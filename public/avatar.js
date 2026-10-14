@@ -16,11 +16,25 @@ function draw(data){
  }
  // soft backdrop with simple 8-bit checker corners
  rect(0,0,96,96,'#e6d9ff');rect(0,77,96,19,'#cbb7f7');for(let i=0;i<4;i++){rect(5+i*4,7,2,2,'#ffffff');rect(76+i*4,68,2,2,'#ffffff')}
- // Hair behind the head is always below the face and above the background.
+ // Back-of-head hair: only strands that naturally fall behind the face.
  L=layers.backHair;
- if([5,6,7,9,14,15,16,17,18,19].includes(a.hair)){rect(22,27,52,52,hshade);rect(19,43,9,36,hair);rect(68,43,9,36,hair)}
- if([10,11,12].includes(a.hair)){ellipse(48,37,32,31,hshade);ellipse(48,33,29,29,hair)}
- if(a.hair===21){ellipse(17,28,13,14,hair);ellipse(79,28,13,14,hair)}
+ const h=a.hair;
+ if([5,6,7,9,14,15,16,18].includes(h)){
+   if([5,6].includes(h)){rect(22,32,9,43,hshade);rect(65,32,9,43,hshade)}
+   if(h===7){for(const x of [19,71])for(let y=30;y<78;y+=8){const dx=(Math.floor((y-30)/8)%2)*4;ellipse(x+dx,y,6,6,hshade);ellipse(x+dx-1,y-2,4,3,hair)}}
+   if(h===9){for(const x of [20,76])for(let y=33;y<77;y+=9){ellipse(x,y,8,8,hshade);ellipse(x-2,y-2,6,6,hair)}}
+   if([14,15,16,18].includes(h)){for(const x of [21,73]){rect(x-3,30,6,h===14||h===16?48:32,hshade)}}
+ }
+ if(h===19){ // ponytail must be visible behind the right shoulder
+   rect(67,27,12,10,hshade);rect(74,32,11,36,hshade);
+   for(let y=36;y<72;y+=7){ellipse(80+(Math.floor(y/7)%2?2:-1),y,8,6,hair);rect(78,y-3,3,3,hlight)}
+ }
+ if(h===20){ // bun moves below cap brim when a cap is worn
+   const by=a.headwear===5?39:22;
+   ellipse(71,by,17,16,hshade);ellipse(71,by-3,14,13,hair);
+   for(const [x,y] of [[65,by-9],[73,by-11],[79,by-3],[67,by+2]])rect(x,y,4,3,hlight)
+ }
+ if(h===21){for(const x of [19,77]){ellipse(x,22,15,14,hshade);ellipse(x,20,12,11,hair)}}
  L=layers.body;rect(13,85,70,11,outline);rect(17,79,62,17,shirt);rect(26,75,44,21,shirt);rect(39,69,18,15,shade);rect(41,68,14,14,skin);
  if(a.shirt===3){rect(29,77,38,9,outline);rect(32,77,32,9,shirt)}
  if([2,6,7].includes(a.shirt)){rect(45,81,6,15,'#fff2dc')}
@@ -43,28 +57,83 @@ function draw(data){
  const lip='#93465f';if(a.mouth===6){rect(46,61,5,6,lip)}else if(a.mouth===2){rect(42,63,13,2,lip)}else if(a.mouth===4){rect(42,62,11,2,lip);rect(53,60,3,2,lip)}else{rect(42,61,13,2,lip);rect(44,63,9,2,lip);if([1,3].includes(a.mouth))rect(44,61,9,2,'#fff5ee')}
  if(a.facialHair){if([2,3,5,7].includes(a.facialHair)){rect(42,59,6,2,hshade);rect(49,59,6,2,hshade)}if([1,3,4,5].includes(a.facialHair)){rect(34,64,6,4,hshade);rect(40,68,16,4,hair);rect(56,64,6,4,hshade);if(a.facialHair===5){rect(31,55,5,13,hair);rect(60,55,5,13,hair)}}if(a.facialHair===6){rect(29,50,4,13,hair);rect(63,50,4,13,hair)}}
  L=layers.frontHair;
- const h=a.hair;
- if(h===1||h===22){rect(29,22,38,7,hair);rect(34,19,28,4,hlight);if(h===22){rect(28,25,6,17,hshade);rect(62,25,6,17,hshade)}}
- else if([2,3,4,5,6].includes(h)){rect(26,19,44,12,hair);rect(30,15,34,8,hair);rect(27,28,7,h===6?42:14,hshade);rect(64,27,7,[5,6].includes(h)?44:12,hshade);if(h===3){rect(30,29,24,5,hair)}if(h===4){rect(32,17,13,6,hlight)}}
- else if(h===7){ // clearly wavy: stepped S-shaped locks
-  rect(27,17,42,12,hair);for(const x of [23,67]){for(let y=27;y<74;y+=6){const shift=Math.round(Math.sin((y-27)/6*Math.PI/2)*3);rect(x+shift,y,7,5,hair);rect(x+shift+1,y,2,3,hlight)}}rect(34,20,26,3,hlight)
+ // Each style has its own silhouette and texture. Keep eyes, nose and mouth unobscured.
+ if(h===1||h===22){rect(29,22,38,7,hair);rect(34,19,28,4,hlight);if(h===22){rect(28,25,6,14,hshade);rect(62,25,6,14,hshade)}}
+ else if([2,3,4,5,6].includes(h)){
+   rect(27,20,42,10,hshade);rect(31,16,34,9,hair);rect(30,23,36,6,hair);
+   if(h===3){rect(30,29,20,4,hair);rect(51,19,3,9,hlight)}
+   if(h===4){rect(32,17,13,6,hlight)}
+   if([5,6].includes(h)){rect(24,28,8,h===6?43:26,hair);rect(66,28,8,h===6?43:26,hair)}
  }
- else if([8,9].includes(h)){ // curls are individual rounded clusters, not flat slabs
-  for(let y=17;y<=31;y+=8)for(let x=25;x<=69;x+=9){ellipse(x+(y%3),y,6,6,(x+y)%3===0?hshade:hair);rect(x-2,y-3,3,2,hlight)}
-  if(h===9){for(let y=34;y<=69;y+=9){ellipse(24+Math.round(Math.sin(y)*2),y,7,7,hair);ellipse(72+Math.round(Math.cos(y)*2),y,7,7,hair)}}
+ else if(h===7){ // long wavy: alternating S curves, highlighted ridges, negative space
+   rect(29,17,38,10,hshade);rect(33,14,31,9,hair);
+   for(const x of [24,68])for(let i=0;i<7;i++){
+     const y=27+i*7,shift=[0,3,5,2,-1,-3,0][i];
+     ellipse(x+shift,y,6,5,hshade);ellipse(x+shift-2,y-2,4,3,hair);
+     rect(x+shift-3,y-3,2,3,hlight);
+   }
+   rect(31,22,30,4,hair);
  }
- else if([10,11,12].includes(h)){ // afro, high-top, coily crop
-  const top=h===11?7:h===12?19:12;for(let y=top;y<=32;y+=8)for(let x=23;x<=73;x+=9){ellipse(x,y,6,6,(x+y)%2?hshade:hair);rect(x-1,y-2,2,2,hlight)}if(h===11){rect(29,9,38,10,hair)}
+ else if([8,9].includes(h)){ // short/long curls: many rounded separated ringlets
+   for(let row=0;row<3;row++)for(let col=0;col<7;col++){
+     const x=25+col*8+(row%2?3:0),y=17+row*7;
+     ellipse(x,y,5,5,hshade);ellipse(x-1,y-2,4,4,hair);rect(x-2,y-3,2,2,hlight);
+   }
+   for(const x of [25,71])for(let row=0;row<(h===9?6:2);row++){
+     const y=35+row*7,offset=(row%2?3:-2)*(x<48?1:-1);
+     ellipse(x+offset,y,6,6,hshade);ellipse(x+offset-1,y-2,4,4,hair);
+     rect(x+offset-2,y-3,2,2,hlight);
+   }
  }
- else if([13,14,17].includes(h)){ // locs: distinct shaded cylindrical strands with gaps
-  rect(29,18,38,10,hair);for(const x of [24,31,38,59,66,73])strand(x,26,h===14?49:29,4);if(h===17){for(const x of [26,67])strand(x,29,37,5)}
+ else if([10,11,12].includes(h)){
+   const top=h===11?7:h===12?19:12;
+   for(let y=top;y<=31;y+=7)for(let x=24;x<=72;x+=8){
+     ellipse(x+(y%2?2:0),y,5,5,hshade);ellipse(x-1,y-2,4,4,hair);rect(x-2,y-3,2,2,hlight);
+   }
  }
- else if([15,16,18].includes(h)){ // braids/twists: alternating plaited pixels
-  rect(28,18,40,11,hair);for(const x of [24,31,65,72]){const len=h===16?49:31;for(let y=28;y<28+len;y+=5){rect(x+(Math.floor(y/5)%2?1:0),y,5,3,hair);rect(x+(Math.floor(y/5)%2?0:2),y+3,4,2,hshade);rect(x+1,y+1,1,2,hlight)}}
+ else if([13,14].includes(h)){ // individually segmented locs with visible gaps
+   rect(29,18,38,10,hair);
+   for(const x of [24,31,38,60,67,74])strand(x,28,h===14?47:24,4);
  }
- else if(h===19){rect(29,18,38,11,hair);rect(66,25,8,21,hair);ellipse(77,51,9,11,hair)}
- else if(h===20){rect(29,20,38,11,hair);ellipse(48,12,13,12,hair)}
- else if(h===21){rect(29,23,38,9,hair)}
+ else if([15,16,18].includes(h)){ // braids / twists: staggered plaits, never face-covering curtains
+   rect(29,18,38,10,hshade);
+   for(const x of [23,30,66,73]){
+     const len=h===16?47:29;
+     for(let j=0;j<len;j+=6){
+       rect(x+(j/6%2?2:0),29+j,4,4,hair);
+       rect(x+(j/6%2?0:2),32+j,4,3,hshade);
+       rect(x+1,30+j,1,2,hlight);
+     }
+   }
+ }
+ else if(h===17){ // cornrows: visible scalp partings and swept-back braided ridges
+   rect(28,19,40,12,hshade);
+   for(let row=0;row<5;row++){
+     const x=31+row*8;
+     rect(x,18,2,12,shade); // scalp between rows
+     for(let j=0;j<4;j++){
+       const y=17+j*4;
+       rect(x+2,y,5,3,hair);
+       rect(x+3,y,2,1,hlight);
+       rect(x+5,y+2,2,2,hshade);
+     }
+   }
+   // small braided tails tucked behind ears
+   for(const x of [25,70])for(let j=0;j<5;j++){
+     rect(x+(j%2),31+j*5,4,3,hair);rect(x+1,34+j*5,3,2,hshade);
+   }
+ }
+ else if(h===19){ // ponytail: slicked-back hair, clear side part, visible rear pony
+   rect(29,18,38,10,hshade);rect(34,16,31,8,hair);
+   rect(31,24,32,5,hair);rect(62,23,9,9,hair);
+   rect(68,28,8,5,hlight);rect(76,32,5,5,hshade);
+ }
+ else if(h===20){ // bun: hair swept toward visible upper-right bun
+   rect(29,20,38,9,hshade);rect(32,17,34,9,hair);
+   for(let i=0;i<4;i++)rect(49+i*4,20-i,7,2,hlight);
+   if(a.headwear!==5){ellipse(72,17,11,10,hshade);ellipse(71,16,8,8,hair);rect(69,11,4,3,hlight);}
+ }
+ else if(h===21){rect(29,23,38,8,hair);rect(22,18,9,9,hlight);rect(68,18,9,9,hlight)}
  else if(h===23){rect(28,27,40,8,hair);rect(41,7,14,24,hair);rect(43,5,10,7,hlight)}
  // Headwear is above hair; covered styles hide conflicting bulky hair for a clean silhouette.
  L=layers.headwear;
