@@ -18,7 +18,7 @@ function roomCode(){let c;do{c=code()}while(rooms.has(c));return c}
 function send(socket,event,data){socket.emit(event,data)}
 function error(socket,msg){send(socket,'game:error',msg)}
 function publicState(room,viewer){let me=room.players.find(p=>p.id===viewer);const reveal=['reveal','debate','finished'].includes(room.phase);return {code:room.code,phase:room.phase,round:room.round,rounds:room.rounds,intensity:room.intensity,deadline:room.deadline,hostId:room.hostId,myId:viewer,me:me?{id:me.id,name:me.name,balance:me.balance,vote:me.vote,bet:me.bet,prediction:me.prediction}:null,players:room.players.map(p=>({id:p.id,name:p.name,balance:p.balance,connected:p.connected,hasVoted:p.vote!==null,hasPredicted:p.prediction!==null,hasBet:p.bet!==null})),take:room.take,results:reveal?room.results:null,chat:room.chat.slice(-40),awards:room.phase==='finished'?room.awards:null}}
-function broadcast(room){for(const p of room.players){if(p.socketId){const s=io.sockets.sockets.get(p.socketId);if(s)send(s,'game:state',publicState(room,p.id))}}}
+function broadcast(room){if(room.players.some(p=>p.connected))room.lastActive=Date.now();for(const p of room.players){if(p.socketId){const s=io.sockets.sockets.get(p.socketId);if(s)send(s,'game:state',publicState(room,p.id))}}}
 function clearTimer(room){if(room.timer)clearTimeout(room.timer);room.timer=null}
 function schedule(room,seconds,fn){clearTimer(room);room.deadline=Date.now()+seconds*1000;room.timer=setTimeout(fn,seconds*1000);broadcast(room)}
 function chooseTake(room){let tier=room.intensity;if(tier==='mixed'){const fraction=(room.round-1)/Math.max(1,room.rounds-1);tier=fraction<.34?'mild':fraction<.67?'spicy':'chaos'}let options=takes[tier].filter(x=>!room.used.has(x));if(!options.length){room.used.clear();options=takes[tier]}let take=options[crypto.randomInt(options.length)];room.used.add(take);return take}
@@ -32,20 +32,49 @@ function beginDebate(room){if(room.phase!=='reveal')return;room.phase='debate';s
 function nextRound(room){if(room.phase!=='debate')return;if(room.round>=room.rounds){finish(room);return}if(room.players.filter(p=>p.connected).length<2){clearTimer(room);room.phase='paused';room.deadline=null;broadcast(room);return}startRound(room)}
 function finish(room){clearTimer(room);room.phase='finished';room.deadline=null;const sorted=[...room.players].sort((a,b)=>b.balance-a.balance);const biggest=[...room.players].sort((a,b)=>b.wagered-a.wagered)[0];const accurate=[...room.players].filter(p=>p.predictions).sort((a,b)=>b.correct/b.predictions-a.correct/a.predictions)[0];const comeback=[...room.players].sort((a,b)=>b.comebacks-a.comebacks||b.profit-a.profit)[0];room.awards={winners:sorted.filter(p=>p.balance===sorted[0].balance).map(p=>p.name),risk:biggest?.name,accuracy:accurate?.name||'None',comeback:comeback?.comebacks?comeback.name:'None'};broadcast(room)}
 function activeRoom(socket){const {roomCode,playerId}=socket.data||{};const room=rooms.get(roomCode);const p=room?.players.find(p=>p.id===playerId&&p.socketId===socket.id);return room&&p?{room,p}:null}
+function leaveRoom(socket){
+ const a=activeRoom(socket);
+ if(!a){socket.data={};send(socket,'room:left');return}
+ const {room,p}=a;
+ socket.leave(room.code);
+ socket.data={};
+ room.players=room.players.filter(x=>x!==p);
+ if(room.hostId===p.id){
+   room.hostId=(room.players.find(x=>x.connected)||room.players[0])?.id||null;
+ }
+ send(socket,'room:left');
+ if(!room.players.length){
+   clearTimer(room);rooms.delete(room.code);return;
+ }
+ if(room.phase==='lobby')broadcast(room);
+ else if(room.phase==='vote'){
+   broadcast(room);
+   if(room.players.filter(x=>x.connected).every(x=>x.vote!==null))beginPredict(room);
+ }else if(room.phase==='predict'){
+   broadcast(room);
+   if(room.players.filter(x=>x.connected).every(x=>x.prediction!==null))beginBet(room);
+ }else if(room.phase==='bet'){
+   broadcast(room);
+   if(room.players.filter(x=>x.connected).every(x=>x.bet!==null||!x.prediction))reveal(room);
+ }else broadcast(room);
+}
 function resumeIfReady(room){if(room.phase==='paused'&&room.players.filter(p=>p.connected).length>=2)startRound(room)}
 function join(socket,room,name,token){if(!room)return error(socket,'Room not found. Check the code.');if(room.phase!=='lobby'&&!token)return error(socket,'This game has already started.');let p=token?room.players.find(p=>p.token===token):null;if(token&&!p)return error(socket,'Reconnect link is no longer valid.');if(!p){if(room.players.length>=8)return error(socket,'This room is full.');const n=cleanName(name);if(!n)return error(socket,'Enter a display name.');if(room.players.some(p=>p.name.toLowerCase()===n.toLowerCase()))return error(socket,'That name is taken.');p={id:id(),token:crypto.randomBytes(24).toString('hex'),name:n,socketId:null,connected:false,balance:1000,vote:null,bet:null,prediction:null,wagered:0,predictions:0,correct:0,comebacks:0,profit:0};room.players.push(p)}
 if(p.socketId&&p.socketId!==socket.id){const old=io.sockets.sockets.get(p.socketId);if(old){old.data={};old.disconnect(true)}}p.socketId=socket.id;p.connected=true;socket.data={roomCode:room.code,playerId:p.id};socket.join(room.code);send(socket,'game:session',{code:room.code,token:p.token,id:p.id});broadcast(room);resumeIfReady(room)}
 io.on('connection',socket=>{
- socket.on('room:create',(data={})=>{if(activeRoom(socket))return error(socket,'Already in a room.');const room={code:roomCode(),phase:'lobby',round:0,rounds:allowedRounds.has(Number(data.rounds))?Number(data.rounds):10,intensity:allowedIntensity.has(data.intensity)?data.intensity:'mixed',players:[],hostId:null,used:new Set(),take:null,results:null,chat:[],timer:null,deadline:null,awards:null};rooms.set(room.code,room);join(socket,room,data.name,null);room.hostId=room.players[0].id;broadcast(room)});
+ socket.on('room:create',(data={})=>{if(activeRoom(socket))return error(socket,'Already in a room.');const room={createdAt:Date.now(),lastActive:Date.now(),code:roomCode(),phase:'lobby',round:0,rounds:allowedRounds.has(Number(data.rounds))?Number(data.rounds):10,intensity:allowedIntensity.has(data.intensity)?data.intensity:'mixed',players:[],hostId:null,used:new Set(),take:null,results:null,chat:[],timer:null,deadline:null,awards:null};rooms.set(room.code,room);join(socket,room,data.name,null);room.hostId=room.players[0].id;broadcast(room)});
  socket.on('room:join',(data={})=>{if(activeRoom(socket))return error(socket,'Already in a room.');join(socket,rooms.get(String(data.code||'').toUpperCase().trim()),data.name,null)});
  socket.on('room:rejoin',(data={})=>join(socket,rooms.get(String(data.code||'').toUpperCase().trim()),null,data.token));
+ socket.on('room:leave',()=>leaveRoom(socket));
  socket.on('room:start',()=>{const a=activeRoom(socket);if(!a)return;if(a.p.id!==a.room.hostId)return error(socket,'Only the host can start.');if(a.room.phase!=='lobby')return;if(a.room.players.filter(p=>p.connected).length<2)return error(socket,'At least two connected players required.');startRound(a.room)});
  socket.on('game:vote',choice=>{const a=activeRoom(socket);if(!a||a.room.phase!=='vote'||a.p.vote!==null)return;if(!['agree','disagree'].includes(choice))return;a.p.vote=choice;broadcast(a.room);if(a.room.players.filter(p=>p.connected).every(p=>p.vote!==null))beginPredict(a.room)});
  socket.on('game:predict',choice=>{const a=activeRoom(socket);if(!a||a.room.phase!=='predict'||a.p.prediction!==null)return;if(!['agree','disagree'].includes(choice))return;a.p.prediction=choice;broadcast(a.room);if(a.room.players.filter(p=>p.connected).every(p=>p.prediction!==null))beginBet(a.room)});
  socket.on('game:bet',data=>{const a=activeRoom(socket);if(!a||a.room.phase!=='bet'||a.p.bet!==null)return;if(!a.p.prediction)return error(socket,'You must predict the majority before wagering.');const bet=Number(data?.amount);if(!Number.isSafeInteger(bet)||bet<=0||bet>a.p.balance||bet>500||(a.p.balance>=50&&bet<50))return error(socket,'Invalid wager.');a.p.bet=bet;broadcast(a.room);if(a.room.players.filter(p=>p.connected).every(p=>p.bet!==null||!p.prediction))reveal(a.room)});
  socket.on('game:next',()=>{const a=activeRoom(socket);if(!a||a.p.id!==a.room.hostId||a.room.phase!=='debate')return;nextRound(a.room)});
  socket.on('game:chat',msg=>{const a=activeRoom(socket);if(!a)return;const now=Date.now();if(socket.data.lastChat&&now-socket.data.lastChat<1000)return;socket.data.lastChat=now;const text=String(msg||'').trim().slice(0,240);if(!text)return;a.room.chat.push({name:a.p.name,text,time:now});a.room.chat=a.room.chat.slice(-40);broadcast(a.room)});
- socket.on('disconnect',()=>{const room=rooms.get(socket.data?.roomCode);const p=room?.players.find(p=>p.id===socket.data?.playerId&&p.socketId===socket.id);if(!p)return;p.connected=false;p.socketId=null;if(room.phase==='lobby'){room.players=room.players.filter(x=>x!==p);if(room.hostId===p.id)room.hostId=room.players[0]?.id;if(!room.players.length){clearTimer(room);rooms.delete(room.code);return}}broadcast(room)});
+ socket.on('disconnect',()=>{const room=rooms.get(socket.data?.roomCode);const p=room?.players.find(p=>p.id===socket.data?.playerId&&p.socketId===socket.id);if(!p)return;p.connected=false;p.socketId=null;// Keep lobby seats during a temporary disconnect so browser refresh can rejoin.
+ // An explicit Exit Room action permanently removes the seat and its reconnect token.
+ broadcast(room)});
 });
-setInterval(()=>{for(const [c,r] of rooms){if(r.phase==='finished'&&!r.players.some(p=>p.connected)){clearTimer(r);rooms.delete(c)}}},60000).unref();
+setInterval(()=>{for(const [c,r] of rooms){if((r.phase==='finished'||r.phase==='lobby')&&!r.players.some(p=>p.connected)&&Date.now()-(r.lastActive||r.createdAt||Date.now())>30*60*1000){clearTimer(r);rooms.delete(c)}}},60000).unref();
 const port=process.env.PORT||3000;http.listen(port,'0.0.0.0',()=>console.log(`Hot Takes and High Stakes listening on ${port}`));
